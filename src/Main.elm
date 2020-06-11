@@ -1,229 +1,112 @@
 module Main exposing (main)
 
-import String exposing (fromInt)
-import Playground exposing (..)
+import Browser
+import Browser.Events exposing (onAnimationFrameDelta)
+import Color
+import Game.TwoD as Game
+import Game.TwoD.Camera as Camera exposing (Camera)
+import Game.TwoD.Render as Render exposing (Renderable)
+import Keyboard
+import Keyboard.Arrows
+import Html exposing (..)
+import Browser.Navigation exposing (Key)
 
 
-
-type Direction
-  = UP
-  | DOWN
-  | LEFT
-  | RIGHT
-
-type alias Vector2D a =
-  { x : a
-  , y : a
+main : Program () Model Msg
+main =
+  Browser.element
+  { view = view
+  , update = update
+  , init = init
+  , subscriptions = subs
   }
 
-type alias Object a b =
-  { a
-  | position : Vector2D b
+
+type alias Input =
+  { x : Int
+  , y : Int
   }
 
-type alias Apple =
-  Object {} Number
-
-type alias Node =
-  Object { index : Int } Number
 
 type alias Model =
-  { score : Int
-  , time : Int
-  , direction : Direction
-  , lastPosition : Vector2D Number
-  , snake : List Node
-  , rands : List Int
-  , apple : Apple
+  { position : (Float, Float)
+  , velocity : (Float, Float)
+  , keys : List Keyboard.Key
+  , screen : (Int, Int)
+  , camera : Camera
   }
 
-createNode : Int -> Vector2D Number -> Node
-createNode index position =
-  { position = position
-  , index = index
-  }
-
-toVector2D : (a,a) -> Vector2D a
-toVector2D (x,y) =
-  { x = x
-  , y = y
-  }
 
 initModel : Model
 initModel =
-  { score = 0
-  , time = 0
-  , direction = LEFT
-  , lastPosition = toVector2D (-1,-1)
-  , rands = []
-  , apple = { position = toVector2D (-3, 0) }
-  , snake =
-    [ createNode 0 (toVector2D (0,0))
-    , createNode 1 (toVector2D (1,0))
-    , createNode 2 (toVector2D (2,0))
-    ]
+  { position = (0, 3)
+  , velocity = (0, 0)
+  , keys = []
+  , screen = (800, 600)
+  , camera = Camera.fixedWidth 8 (0, 0)
   }
 
+init : () -> (Model, Cmd Msg)
+init _ =
+  (initModel, Cmd.none)
 
 
--- █   █ █████ ████  █████ █
--- ██ ██ █   █ █   █ █     █
--- █ █ █ █   █ █   █ ███   █
--- █   █ █   █ █   █ █     █
--- █   █ █████ ████  █████ █████
-
-main =
-  game view update initModel
+subs : Model -> Sub Msg
+subs _ =
+  Sub.batch
+    [ Sub.map Keys Keyboard.subscriptions
+    , onAnimationFrameDelta Tick
+    ]
 
 
+type Msg
+  = Tick Float
+  | Keys Keyboard.Msg
 
--- █   █ █████ ████  █████ █████ █████
--- █   █ █   █ █   █ █   █   █   █
--- █   █ █████ █   █ █████   █   ███
--- █   █ █     █   █ █   █   █   █
--- █████ █     ████  █   █   █   █████
 
-getHeadNode : List Node -> Node
-getHeadNode nodes =
-  Maybe.withDefault
-    (createNode 0 (toVector2D (0,0)))
-    (List.head nodes)
+update : Msg -> Model -> (Model, Cmd Msg)
+update msg model =
+  case msg of
+    Tick dt ->
+      (tick (dt / 1000) model, Cmd.none)
 
-getTailNode : List Node -> Node
-getTailNode nodes =
-  Maybe.withDefault
-    (createNode 0 (toVector2D (0,0)))
-    (List.head <| List.drop (List.length nodes - 1) nodes)
+    Keys keyMsg ->
+      ({ model | keys = Keyboard.update keyMsg model.keys }, Cmd.none)
 
-updateNodes : List Node -> List Node -> List Node
-updateNodes prevNodes nodes =
+
+tick : Float -> Model -> Model
+tick dt model =
   let
-    prevHead = getHeadNode prevNodes
-    head = getHeadNode nodes
-  in
-    if List.length nodes == 0 then
-      []
-    else
-      { head
-      | position = toVector2D (prevHead.position.x, prevHead.position.y)
-      } :: updateNodes (List.drop 1 prevNodes) (List.drop 1 nodes)
+    ((x, y), (vx, vy)) =
+      (model.position, model.velocity)
 
-updateSnake : Direction -> List Node -> List Node
-updateSnake direction snake =
+    arrows =
+      Keyboard.Arrows.arrows model.keys
+
+    vy_ = if arrows.y > 0 then 4 else vy - 9.81 * dt
+
+    (newP, newV) =
+      if y <= 0 then
+        ((x, 0.00001), (0, -vy_ * 0.9))
+      else
+        ((x, y + vy_ * dt), (0, vy_))
+  in
+    { model
+    | position = newP
+    , velocity = newV
+    }
+
+
+view : Model -> Html Msg
+view model =
   let
-    snakeHead = getHeadNode snake
+    ((_, y), (_, vy)) =
+      (model.position, model.velocity)
   in
-    case direction of
-      UP ->
-        { snakeHead | position = toVector2D (snakeHead.position.x, snakeHead.position.y - 1) } :: updateNodes snake (List.drop 1 snake)
-      DOWN ->
-        { snakeHead | position = toVector2D (snakeHead.position.x, snakeHead.position.y + 1) } :: updateNodes snake (List.drop 1 snake)
-      LEFT ->
-        { snakeHead | position = toVector2D (snakeHead.position.x - 1, snakeHead.position.y) } :: updateNodes snake (List.drop 1 snake)
-      RIGHT ->
-        { snakeHead | position = toVector2D (snakeHead.position.x + 1, snakeHead.position.y) } :: updateNodes snake (List.drop 1 snake)
-
-getDirectionFromKeyboardXAxis : Direction -> Vector2D Number -> Direction
-getDirectionFromKeyboardXAxis currentDirection moveVector =
-  if moveVector.x /= 0 && moveVector.y == 0 then
-    currentDirection
-  else
-    if moveVector.y /= 0 then
-      if moveVector.y > 0 then
-        DOWN
-      else
-        UP
-    else
-      currentDirection
-
-getDirectionFromKeyboardYAxis : Direction -> Vector2D Number -> Direction
-getDirectionFromKeyboardYAxis currentDirection moveVector =
-  if moveVector.y /= 0 && moveVector.x == 0 then
-    currentDirection
-  else
-    if moveVector.x /= 0 then
-      if moveVector.x > 0 then
-        RIGHT
-      else
-        LEFT
-    else
-      currentDirection
-
-getDirectionFromKeyboard : Direction -> Keyboard -> Direction
-getDirectionFromKeyboard currentDirection keyboard =
-  let
-    moveVector = toVector2D (toX keyboard, toY keyboard)
-  in
-    case currentDirection of
-      UP ->
-        getDirectionFromKeyboardYAxis currentDirection moveVector
-      DOWN ->
-        getDirectionFromKeyboardYAxis currentDirection moveVector
-      LEFT ->
-        getDirectionFromKeyboardXAxis currentDirection moveVector
-      RIGHT ->
-        getDirectionFromKeyboardXAxis currentDirection moveVector
-
-isOverlapping : Object a b -> Object c b -> Bool
-isOverlapping node1 node2 =
-  node1.position == node2.position
-
-isOverlappingSnake : Int -> List (Object a b) -> Object c b -> Bool
-isOverlappingSnake offset snake node =
-  (List.length <| List.filter (isOverlapping node) snake) > (0 + offset)
-
-update : Computer -> Model -> Model
-update computer model =
-  let
-    currentTime = now computer.time
-    keyDirection = getDirectionFromKeyboard model.direction computer.keyboard
-    newDirection =
-      if model.lastPosition /= (getHeadNode model.snake).position then
-        keyDirection
-      else
-        model.direction
-
-    newLastPosition =
-      if model.direction /= newDirection then
-        (getHeadNode model.snake).position
-      else
-        model.lastPosition
-  in
-    if isOverlappingSnake 1 model.snake (getHeadNode model.snake) then
-      initModel
-    else
-      if currentTime - model.time < 200 then
-        { model
-        | direction = newDirection
-        , lastPosition = newLastPosition
-        , score = if isOverlapping (getHeadNode model.snake) model.apple then model.score + 1 else model.score
-        , rands = if List.length model.rands < 2 then modBy 20 currentTime :: model.rands else model.rands
-        , snake = if isOverlapping (getHeadNode model.snake) model.apple then model.snake ++ [ getTailNode model.snake ] else model.snake
-        }
-      else
-        { model
-        | time = currentTime
-        , direction = newDirection
-        , lastPosition = newLastPosition
-        , snake = updateSnake model.direction model.snake
-        }
-
-
-
--- █   █  ███  █████ █   █
--- █   █   █   █     █   █
--- █   █   █   ███   █ █ █
---  █ █    █   █     █ █ █
---   █    ███  █████  █ █
-
-viewObject : Color -> Object a Number -> Shape
-viewObject color node =
-  let
-    nodeSize = 30
-  in
-    square color nodeSize
-      |> move (node.position.x * nodeSize) (node.position.y * nodeSize)
-
-view : Computer -> Model -> List Shape
-view _ model =
-  viewObject red model.apple :: (words black (fromInt model.score) :: List.map (viewObject black) model.snake)
+    Html.div []
+      [ text (String.fromFloat y ++ " " ++ String.fromFloat vy)
+      , Game.renderCentered { time = 0, camera = model.camera, size = model.screen }
+        [ Render.shape Render.rectangle { color = Color.green, position = (-10, -10), size = (20, 10) }
+        , Render.shape Render.circle { color = Color.blue, position = model.position, size = (0.5, 0.5) }
+        ]
+      ]
