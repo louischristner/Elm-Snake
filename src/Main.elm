@@ -134,31 +134,37 @@ update msg model =
       ({ model | apples = { position = { x = toFloat x, y = toFloat y } } :: model.apples }, Cmd.none)
 
 
-updateSnake : Direction -> List Node -> List Node
+updateSnake : Direction -> List Node -> (List Node, Bool)
 updateSnake direction snake =
   let
     snakeHead = Maybe.withDefault initDefaultNode <| List.head snake
+    snakeTail = Maybe.withDefault [] <| List.tail snake
+    snakeOverlap = List.filter (\node -> node.position == snakeHead.position) snakeTail
   in
-    case direction of
-      UP ->
-        { snakeHead
-        | position = { x = snakeHead.position.x, y = snakeHead.position.y - 1 }
-        } :: List.map (\node -> { node | index = node.index + 1 }) (List.take (List.length snake - 1) snake)
+    if List.length snakeOverlap > 0 then
+      (snake, True)
+    else
+      (case direction of
+        UP ->
+          { snakeHead
+          | position = { x = snakeHead.position.x, y = snakeHead.position.y - 1 }
+          } :: List.map (\node -> { node | index = node.index + 1 }) (List.take (List.length snake - 1) snake)
 
-      DOWN ->
-        { snakeHead
-        | position = { x = snakeHead.position.x, y = snakeHead.position.y + 1 }
-        } :: List.map (\node -> { node | index = node.index + 1 }) (List.take (List.length snake - 1) snake)
+        DOWN ->
+          { snakeHead
+          | position = { x = snakeHead.position.x, y = snakeHead.position.y + 1 }
+          } :: List.map (\node -> { node | index = node.index + 1 }) (List.take (List.length snake - 1) snake)
 
-      LEFT ->
-        { snakeHead
-        | position = { x = snakeHead.position.x - 1, y = snakeHead.position.y }
-        } :: List.map (\node -> { node | index = node.index + 1 }) (List.take (List.length snake - 1) snake)
+        LEFT ->
+          { snakeHead
+          | position = { x = snakeHead.position.x - 1, y = snakeHead.position.y }
+          } :: List.map (\node -> { node | index = node.index + 1 }) (List.take (List.length snake - 1) snake)
 
-      RIGHT ->
-        { snakeHead
-        | position = { x = snakeHead.position.x + 1, y = snakeHead.position.y }
-        } :: List.map (\node -> { node | index = node.index + 1 }) (List.take (List.length snake - 1) snake)
+        RIGHT ->
+          { snakeHead
+          | position = { x = snakeHead.position.x + 1, y = snakeHead.position.y }
+          } :: List.map (\node -> { node | index = node.index + 1 }) (List.take (List.length snake - 1) snake)
+      , False)
 
 updateDirection : Direction -> Input -> Direction
 updateDirection direction arrows =
@@ -229,11 +235,17 @@ tick dt model =
       , direction = direction
       }
     else
-      { model
-      | snake = updateSnake model.direction model.snake
-      , timeKeeper = 0
-      , direction = direction
-      }
+      let
+        (updatedSnake, hasLost) = updateSnake model.direction model.snake
+      in
+        if hasLost == True then
+          initModel
+        else
+          { model
+          | snake = updatedSnake
+          , timeKeeper = 0
+          , direction = direction
+          }
 
 
 viewRectangle : Color.Color -> (Float, Float) -> Object a -> Renderable
